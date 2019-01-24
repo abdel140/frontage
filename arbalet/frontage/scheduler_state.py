@@ -204,29 +204,6 @@ class SchedulerState(object):
         val = conf.state
         session.close()
         return val
-        # redis.set(SchedulerState.KEY_USABLE, str(value))
-        # return redis_get(SchedulerState.KEY_ENABLE_STATE, 'on')
-
-    @staticmethod
-    def set_sunset(day, at):
-        table = json.loads(redis.get(SchedulerState.KEY_DAY_TABLE))
-        table[day][SchedulerState.KEY_ON_TIME] = day + 'T' + at + ':00'
-        dumped = json.dumps(table)
-
-        with open(SchedulerState.CITY, 'w') as f:
-            f.write(dumped)
-        redis.set(SchedulerState.KEY_DAY_TABLE, dumped)
-
-    @staticmethod
-    def set_sunrise(day, at):
-        table = json.loads(redis.get(SchedulerState.KEY_DAY_TABLE))
-        table[day][SchedulerState.KEY_OFF_TIME] = day + 'T' + at + ':00'
-        dumped = json.dumps(table)
-
-        with open(SchedulerState.CITY, 'w') as f:
-            f.write(dumped)
-
-        redis.set(SchedulerState.KEY_DAY_TABLE, dumped)
 
     @staticmethod
     def get_time_on():
@@ -265,8 +242,8 @@ class SchedulerState(object):
         session = session_factory()
         conf = session.query(ConfigModel).first()
         conf.time_on = at
-        if conf.time_on in ['sunrise', 'sunset']:
-            conf.offset_time_ofn = 0
+        if conf.time_on not in ['sunrise', 'sunset']:
+            conf.offset_time_on = 0
         session.commit()
         session.close()
 
@@ -275,7 +252,7 @@ class SchedulerState(object):
         session = session_factory()
         conf = session.query(ConfigModel).first()
         conf.time_off = at
-        if conf.time_off in ['sunrise', 'sunset']:
+        if conf.time_off not in ['sunrise', 'sunset']:
             conf.offset_time_off = 0
         session.commit()
         session.close()
@@ -301,13 +278,13 @@ class SchedulerState(object):
     @staticmethod
     def _get_scheduled_off_time():
         time_off = SchedulerState.get_time_off()
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now()
 
         if time_off in ['sunrise', 'sunset']:
             at = now.strftime('%Y-%m-%d')
             calendar = json.loads(redis.get(SchedulerState.KEY_DAY_TABLE))
             if at in calendar:
-                v = calendar[at].get(SchedulerState.KEY_OFF_TIME, now.isoformat())
+                v = calendar[at].get(SchedulerState.KEY_OFF_TIME if time_off=='sunrise' else SchedulerState.KEY_ON_TIME, now.isoformat())
                 off_time = datetime.datetime.strptime(v, '%Y-%m-%dT%H:%M:%S')
                 return off_time + datetime.timedelta(seconds=float(SchedulerState.get_offset_time_off()))
         else:
@@ -315,7 +292,7 @@ class SchedulerState(object):
             try:
                 formatted_time_off = datetime.datetime.strptime(time_off, "%H:%M")
             except ValueError:
-                SchedulerState.set_time_off('sunrise')
+                SchedulerState.set_time_off('23:00')
             else:
                 return now.replace(hour=formatted_time_off.hour, minute=formatted_time_off.minute, second=0, microsecond=0)
        
@@ -326,7 +303,7 @@ class SchedulerState(object):
     def get_scheduled_off_time():
         off_time = SchedulerState._get_scheduled_off_time()
         on_time = SchedulerState._get_scheduled_on_time()
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now()
 
         if on_time > off_time and now > off_time:
             off_time = off_time + datetime.timedelta(days=1)
@@ -336,7 +313,7 @@ class SchedulerState(object):
     def get_scheduled_on_time():
         off_time = SchedulerState._get_scheduled_off_time()
         on_time = SchedulerState._get_scheduled_on_time()
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now()
 
         if on_time > off_time and now < off_time:
             on_time = on_time + datetime.timedelta(days=-1)
@@ -345,13 +322,13 @@ class SchedulerState(object):
     @staticmethod
     def _get_scheduled_on_time():
         time_on = SchedulerState.get_time_on()
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now()
 
         if time_on in ['sunrise', 'sunset']:
             at = now.strftime('%Y-%m-%d')
             calendar = json.loads(redis.get(SchedulerState.KEY_DAY_TABLE))
             if at in calendar:
-                v = calendar[at].get(SchedulerState.KEY_ON_TIME, now.isoformat())
+                v = calendar[at].get(SchedulerState.KEY_OFF_TIME if time_on=='sunrise' else SchedulerState.KEY_ON_TIME, now.isoformat())
                 on_time = datetime.datetime.strptime(v, '%Y-%m-%dT%H:%M:%S')
                 return on_time + datetime.timedelta(seconds=float(SchedulerState.get_offset_time_on()))
         else:
@@ -359,7 +336,7 @@ class SchedulerState(object):
             try:
                 formatted_time_on = datetime.datetime.strptime(time_on, "%H:%M")
             except ValueError:
-                SchedulerState.set_time_on('sunset')
+                SchedulerState.set_time_on('20:00')
             else:
                 return now.replace(hour=formatted_time_on.hour, minute=formatted_time_on.minute, second=0, microsecond=0)
 
